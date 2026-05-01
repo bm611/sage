@@ -3,7 +3,6 @@ import platform
 from pathlib import Path
 
 _MEMORY_NAMES = ["CLAUDE.md", "SAGE.md", ".sage/memory.md"]
-_TOKEN_BUDGET = 160_000
 
 
 def _load_project_memory() -> str:
@@ -55,58 +54,4 @@ Guidelines:
     return prompt
 
 
-class ConversationContext:
-    def __init__(self):
-        self.messages: list[dict] = []
-        self.system_prompt = build_system_prompt()
-        self.input_tokens = 0
-        self.output_tokens = 0
 
-    def add_user(self, content: str):
-        self.messages.append({"role": "user", "content": content})
-
-    def add_assistant(self, content: list):
-        self.messages.append({"role": "assistant", "content": content})
-
-    def add_tool_results(self, results: list[dict]):
-        self.messages.append({"role": "user", "content": results})
-
-    def update_usage(self, input_tokens: int, output_tokens: int):
-        self.input_tokens += input_tokens
-        self.output_tokens += output_tokens
-
-    @property
-    def total_tokens(self) -> int:
-        return self.input_tokens + self.output_tokens
-
-    def should_compact(self) -> bool:
-        return self.input_tokens > _TOKEN_BUDGET * 0.8
-
-    def compact(self, client, model: str):
-        if len(self.messages) < 6:
-            return
-
-        to_summarize = self.messages[:-4]
-        keep = self.messages[-4:]
-
-        resp = client.messages.create(
-            model=model,
-            max_tokens=2048,
-            messages=to_summarize
-            + [
-                {
-                    "role": "user",
-                    "content": (
-                        "Summarize the conversation so far in a few paragraphs. "
-                        "Include key decisions, files changed, and any context needed to continue."
-                    ),
-                }
-            ],
-        )
-        summary = resp.content[0].text
-        self.messages = [
-            {"role": "user", "content": f"[Conversation summary]\n\n{summary}"},
-            {"role": "assistant", "content": "Understood, continuing from the summary."},
-        ] + keep
-        self.input_tokens = 0
-        self.output_tokens = 0

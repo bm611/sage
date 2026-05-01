@@ -33,6 +33,9 @@ class AgentLoop:
                 return False
             except openai.APIConnectionError as e:
                 console.print(f"[red]Connection error: {e}[/red]")
+                # Remove the unanswered user message from history
+                if self.provider.messages and self.provider.messages[-1]["role"] == "user":
+                    self.provider.messages.pop()
                 break
             except KeyboardInterrupt:
                 console.print("\n[dim]Interrupted.[/dim]")

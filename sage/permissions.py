@@ -87,7 +87,7 @@ class PermissionManager:
         )
 
         try:
-            choice = input().strip().lower()
+            choice = self.console.input().strip().lower()
         except (EOFError, KeyboardInterrupt):
             self.console.print()
             return False

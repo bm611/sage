@@ -144,11 +144,6 @@ class OpenAICompatProvider(BaseProvider):
                 if choice.finish_reason:
                     finish_reason = choice.finish_reason
 
-                # Track token usage from streaming response
-                if chunk.usage:
-                    self.input_tokens = chunk.usage.prompt_tokens
-                    self.output_tokens = chunk.usage.completion_tokens
-
                 # Some local backends (LM Studio + Qwen3, DeepSeek, etc.) stream
                 # the model's chain-of-thought in a non-standard `reasoning_content`
                 # field. Show it dimmed so the user can see the model is working.
@@ -188,13 +183,12 @@ class OpenAICompatProvider(BaseProvider):
             sys.stdout.write("\x1b[0m")  # always close the dim attribute
             reasoning_started = False
 
-        # Estimate tokens if API didn't provide usage info
-        if self.input_tokens == 0 and self.output_tokens == 0:
-            # Estimate input tokens from messages
-            messages_text = " ".join(str(m) for m in self.messages)
-            self.input_tokens = _estimate_tokens(messages_text)
-            # Estimate output tokens from generated text
-            self.output_tokens = _estimate_tokens(full_text)
+        # Estimate context tokens from the full message list
+        all_text = json.dumps(
+            [{"role": "system", "content": self.system_prompt}] + self.messages
+        )
+        self.input_tokens = _estimate_tokens(all_text)
+        self.output_tokens += _estimate_tokens(full_text)
 
         if full_text:
             sys.stdout.write("\n")

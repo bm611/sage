@@ -6,7 +6,7 @@ from .agent import AgentLoop
 from .discovery import discover
 from .providers import BaseProvider, OpenAICompatProvider, _TOKEN_BUDGET
 from .selector import open_model_selector
-from .ui import console, print_token_usage, print_welcome
+from .ui import console, print_token_usage, print_welcome, prompt_user
 
 _HELP = """\
 Commands:
@@ -131,19 +131,14 @@ def main(
             sys.exit(1)
         agent.run_turn(" ".join(prompt))
         console.print()
-        print_token_usage(provider.input_tokens, provider.output_tokens, _TOKEN_BUDGET)
+        print_token_usage(provider.input_tokens, _TOKEN_BUDGET)
         return
 
     print_welcome()
 
     while True:
-        try:
-            console.print()
-            user_input = console.input(
-                "[bold bright_blue]>[/bold bright_blue] "
-            ).strip()
-        except (EOFError, KeyboardInterrupt):
-            console.print()
+        user_input = prompt_user()
+        if user_input is None:
             break
 
         if not user_input:
@@ -194,7 +189,6 @@ def main(
                 p = agent.provider
                 print_token_usage(
                     p.input_tokens if p else 0,
-                    p.output_tokens if p else 0,
                     _TOKEN_BUDGET,
                 )
             elif cmd == "/ram":
@@ -231,6 +225,6 @@ def main(
 
         p = agent.provider
         if p:
-            print_token_usage(p.input_tokens, p.output_tokens, _TOKEN_BUDGET)
+            print_token_usage(p.input_tokens, _TOKEN_BUDGET)
 
     console.print("[dim]Bye.[/dim]")

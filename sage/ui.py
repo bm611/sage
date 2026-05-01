@@ -1,4 +1,5 @@
 import json
+import shutil
 
 from rich.console import Console
 from rich.markup import escape
@@ -21,17 +22,50 @@ _THEME = Theme(
 
 console = Console(theme=_THEME, highlight=False)
 
+_SAGE_ASCII = r"""
+   ███████╗ █████╗  ██████╗ ███████╗
+   ██╔════╝██╔══██╗██╔════╝ ██╔════╝
+   ███████╗███████║██║  ███╗█████╗  
+   ╚════██║██╔══██║██║   ██║██╔══╝  
+   ███████║██║  ██║╚██████╔╝███████╗
+   ╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
+"""
+
 
 def print_welcome():
     from .sysinfo import memory_status_markup
 
+    term_width = shutil.get_terminal_size().columns
+
     console.print()
-    console.print(Rule("[bold cyan]  Sage  [/bold cyan]", style="cyan"))
+    for line in _SAGE_ASCII.strip("\n").split("\n"):
+        text = Text(line, style="bold cyan")
+        text.pad_left((term_width - len(line.rstrip())) // 2)
+        console.print(text)
+
+    console.print()
     console.print(
-        "[sage.dim]AI coding assistant  ·  /help for commands  ·  /quit to exit[/sage.dim]"
+        "[sage.dim]AI coding assistant  ·  /help for commands  ·  /quit to exit[/sage.dim]",
+        justify="center",
     )
-    console.print(memory_status_markup())
+    console.print(memory_status_markup(), justify="center")
     console.print()
+
+
+def prompt_user() -> str | None:
+    """Get user input with a styled input area. Returns None on EOF/Interrupt."""
+    term_width = shutil.get_terminal_size().columns
+    try:
+        console.print()
+        header = "─" * max(0, term_width - 8)
+        console.print(
+            f"[bright_blue]╭─[/bright_blue] [bold bright_blue]You[/bold bright_blue] [bright_blue]{header}[/bright_blue]"
+        )
+        user_input = console.input("[bold bright_blue]╰▸ [/bold bright_blue]").strip()
+        return user_input
+    except (EOFError, KeyboardInterrupt):
+        console.print()
+        return None
 
 
 def print_tool_call(tool_name: str, tool_input: dict):
@@ -85,7 +119,6 @@ def print_tool_result(tool_name: str, content: str, is_error: bool):
             + f"\n[sage.dim]… {len(content) - 3000} more chars[/sage.dim]"
         )
 
-    # Syntax highlight file content
     if tool_name == "read_file" and not is_error:
         body: object = Syntax(
             display,
@@ -100,11 +133,9 @@ def print_tool_result(tool_name: str, content: str, is_error: bool):
     console.print(Panel(body, title=title, border_style=style, padding=(0, 1)))
 
 
-def print_token_usage(
-    input_tokens: int, output_tokens: int, token_budget: int = 128_000
-):
-    percentage = min(100, (input_tokens / token_budget) * 100)
+def print_token_usage(context_tokens: int, token_budget: int = 128_000):
+    percentage = min(100, (context_tokens / token_budget) * 100)
     console.print(
-        f"[sage.dim]tokens: {input_tokens:,} in / {output_tokens:,} out · {percentage:.1f}% of {token_budget // 1000}k context[/sage.dim]",
+        f"[sage.dim]{percentage:.1f}% of {token_budget // 1000}k context[/sage.dim]",
         justify="right",
     )
