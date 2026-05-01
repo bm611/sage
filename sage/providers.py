@@ -3,6 +3,8 @@ import sys
 from dataclasses import dataclass, field
 
 import openai
+from rich.live import Live
+from rich.markdown import Markdown
 
 from .context import build_system_prompt
 from .ui import console
@@ -96,9 +98,7 @@ class OpenAICompatProvider(BaseProvider):
             kwargs["tools"] = oai_tools
         if self.no_think:
             # Qwen3 / DeepSeek-R1 etc. honor this through their chat templates.
-            kwargs["extra_body"] = {
-                "chat_template_kwargs": {"enable_thinking": False}
-            }
+            kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
 
         stream = self.client.chat.completions.create(**kwargs)
 
@@ -109,49 +109,49 @@ class OpenAICompatProvider(BaseProvider):
         reasoning_started = False
 
         console.print()
-        for chunk in stream:
-            if not chunk.choices:
-                continue
-            choice = chunk.choices[0]
-            delta = choice.delta
-            if choice.finish_reason:
-                finish_reason = choice.finish_reason
+        with Live(Markdown(""), console=console, refresh_per_second=10) as live:
+            for chunk in stream:
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
+                delta = choice.delta
+                if choice.finish_reason:
+                    finish_reason = choice.finish_reason
 
-            # Some local backends (LM Studio + Qwen3, DeepSeek, etc.) stream
-            # the model's chain-of-thought in a non-standard `reasoning_content`
-            # field. Show it dimmed so the user can see the model is working.
-            reasoning_chunk = getattr(delta, "reasoning_content", None)
-            if reasoning_chunk:
-                if not reasoning_started:
-                    sys.stdout.write("\x1b[2m")  # dim on
-                    reasoning_started = True
-                reasoning_text += reasoning_chunk
-                sys.stdout.write(reasoning_chunk)
-                sys.stdout.flush()
+                # Some local backends (LM Studio + Qwen3, DeepSeek, etc.) stream
+                # the model's chain-of-thought in a non-standard `reasoning_content`
+                # field. Show it dimmed so the user can see the model is working.
+                reasoning_chunk = getattr(delta, "reasoning_content", None)
+                if reasoning_chunk:
+                    if not reasoning_started:
+                        sys.stdout.write("\x1b[2m")  # dim on
+                        reasoning_started = True
+                    reasoning_text += reasoning_chunk
+                    sys.stdout.write(reasoning_chunk)
+                    sys.stdout.flush()
 
-            if delta.content:
-                if reasoning_started:
-                    sys.stdout.write("\x1b[0m\n")  # dim off + newline before answer
-                    reasoning_started = False
-                full_text += delta.content
-                sys.stdout.write(delta.content)
-                sys.stdout.flush()
+                if delta.content:
+                    if reasoning_started:
+                        sys.stdout.write("\x1b[0m\n")  # dim off + newline before answer
+                        reasoning_started = False
+                    full_text += delta.content
+                    live.update(Markdown(full_text))
 
-            if delta.tool_calls:
-                if reasoning_started:
-                    sys.stdout.write("\x1b[0m\n")
-                    reasoning_started = False
-                for tc in delta.tool_calls:
-                    idx = tc.index
-                    if idx not in tool_acc:
-                        tool_acc[idx] = {"id": "", "name": "", "arguments": ""}
-                    if tc.id:
-                        tool_acc[idx]["id"] = tc.id
-                    if tc.function:
-                        if tc.function.name:
-                            tool_acc[idx]["name"] += tc.function.name
-                        if tc.function.arguments:
-                            tool_acc[idx]["arguments"] += tc.function.arguments
+                if delta.tool_calls:
+                    if reasoning_started:
+                        sys.stdout.write("\x1b[0m\n")
+                        reasoning_started = False
+                    for tc in delta.tool_calls:
+                        idx = tc.index
+                        if idx not in tool_acc:
+                            tool_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                        if tc.id:
+                            tool_acc[idx]["id"] = tc.id
+                        if tc.function:
+                            if tc.function.name:
+                                tool_acc[idx]["name"] += tc.function.name
+                            if tc.function.arguments:
+                                tool_acc[idx]["arguments"] += tc.function.arguments
 
         if reasoning_started:
             sys.stdout.write("\x1b[0m")  # always close the dim attribute
@@ -163,7 +163,8 @@ class OpenAICompatProvider(BaseProvider):
             # Nothing visible to the user — surface why so it isn't a mystery.
             if finish_reason == "length":
                 cap = (
-                    f"max_tokens={self.max_tokens}" if self.max_tokens
+                    f"max_tokens={self.max_tokens}"
+                    if self.max_tokens
                     else "the server's context window"
                 )
                 console.print(
@@ -186,11 +187,13 @@ class OpenAICompatProvider(BaseProvider):
                 inp = json.loads(tc["arguments"]) if tc["arguments"] else {}
             except json.JSONDecodeError:
                 inp = {}
-            tool_calls.append(ToolCallInfo(
-                id=tc["id"] or f"call_{len(tool_calls)}",
-                name=tc["name"],
-                input=inp,
-            ))
+            tool_calls.append(
+                ToolCallInfo(
+                    id=tc["id"] or f"call_{len(tool_calls)}",
+                    name=tc["name"],
+                    input=inp,
+                )
+            )
 
         assistant_msg: dict = {"role": "assistant", "content": full_text or ""}
         if tool_calls:
@@ -212,11 +215,13 @@ class OpenAICompatProvider(BaseProvider):
 
     def add_tool_results(self, tool_calls: list[ToolCallInfo], results: list):
         for tc, r in zip(tool_calls, results):
-            self.messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": r.content,
-            })
+            self.messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": r.content,
+                }
+            )
 
     def compact(self):
         if len(self.messages) < 6:
@@ -228,15 +233,20 @@ class OpenAICompatProvider(BaseProvider):
             max_tokens=2048,
             messages=[{"role": "system", "content": self.system_prompt}]
             + to_summarize
-            + [{
-                "role": "user",
-                "content": "Summarize this conversation — key decisions, files changed, context needed to continue.",
-            }],
+            + [
+                {
+                    "role": "user",
+                    "content": "Summarize this conversation — key decisions, files changed, context needed to continue.",
+                }
+            ],
         )
         summary = resp.choices[0].message.content or ""
         self.messages = [
             {"role": "user", "content": f"[Conversation summary]\n\n{summary}"},
-            {"role": "assistant", "content": "Understood, continuing from the summary."},
+            {
+                "role": "assistant",
+                "content": "Understood, continuing from the summary.",
+            },
         ] + keep
         self.input_tokens = 0
         self.output_tokens = 0
