@@ -27,7 +27,9 @@ def print_welcome():
 
     console.print()
     console.print(Rule("[bold cyan]  Sage  [/bold cyan]", style="cyan"))
-    console.print("[sage.dim]AI coding assistant  ·  /help for commands  ·  /quit to exit[/sage.dim]")
+    console.print(
+        "[sage.dim]AI coding assistant  ·  /help for commands  ·  /quit to exit[/sage.dim]"
+    )
     console.print(memory_status_markup())
     console.print()
 
@@ -63,7 +65,12 @@ def print_tool_call(tool_name: str, tool_input: dict):
         body = Text(escape(json.dumps(tool_input, indent=2)[:400]))
 
     console.print(
-        Panel(body, title=f"[sage.tool]{tool_name}[/sage.tool]", border_style="cyan", padding=(0, 1))
+        Panel(
+            body,
+            title=f"[sage.tool]{tool_name}[/sage.tool]",
+            border_style="cyan",
+            padding=(0, 1),
+        )
     )
 
 
@@ -73,12 +80,19 @@ def print_tool_result(tool_name: str, content: str, is_error: bool):
 
     display = content
     if len(display) > 3000:
-        display = display[:3000] + f"\n[sage.dim]… {len(content) - 3000} more chars[/sage.dim]"
+        display = (
+            display[:3000]
+            + f"\n[sage.dim]… {len(content) - 3000} more chars[/sage.dim]"
+        )
 
     # Syntax highlight file content
     if tool_name == "read_file" and not is_error:
         body: object = Syntax(
-            display, "text", theme="monokai", line_numbers=False, background_color="default"
+            display,
+            "text",
+            theme="monokai",
+            line_numbers=False,
+            background_color="default",
         )
     else:
         body = Text.from_markup(escape(display))
@@ -86,8 +100,11 @@ def print_tool_result(tool_name: str, content: str, is_error: bool):
     console.print(Panel(body, title=title, border_style=style, padding=(0, 1)))
 
 
-def print_token_usage(input_tokens: int, output_tokens: int):
+def print_token_usage(
+    input_tokens: int, output_tokens: int, token_budget: int = 128_000
+):
+    percentage = min(100, (input_tokens / token_budget) * 100)
     console.print(
-        f"[sage.dim]tokens: {input_tokens:,} in / {output_tokens:,} out[/sage.dim]",
+        f"[sage.dim]tokens: {input_tokens:,} in / {output_tokens:,} out · {percentage:.1f}% of {token_budget // 1000}k context[/sage.dim]",
         justify="right",
     )

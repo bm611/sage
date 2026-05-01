@@ -3,6 +3,7 @@ import sys
 from dataclasses import dataclass, field
 
 import openai
+import tiktoken
 from rich.live import Live
 from rich.markdown import Markdown
 
@@ -11,6 +12,31 @@ from .ui import console
 
 _COMPACT_THRESHOLD = 0.80
 _TOKEN_BUDGET = 128_000
+
+# Cache for tokenizer to avoid re-initializing
+_tokenizer = None
+
+
+def _get_tokenizer():
+    global _tokenizer
+    if _tokenizer is None:
+        try:
+            _tokenizer = tiktoken.get_encoding("cl100k_base")
+        except Exception:
+            _tokenizer = None
+    return _tokenizer
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count using tiktoken, fallback to character approximation."""
+    tokenizer = _get_tokenizer()
+    if tokenizer:
+        try:
+            return len(tokenizer.encode(text))
+        except Exception:
+            pass
+    # Fallback: approximate 4 chars per token
+    return len(text) // 4
 
 
 @dataclass
@@ -118,6 +144,11 @@ class OpenAICompatProvider(BaseProvider):
                 if choice.finish_reason:
                     finish_reason = choice.finish_reason
 
+                # Track token usage from streaming response
+                if chunk.usage:
+                    self.input_tokens = chunk.usage.prompt_tokens
+                    self.output_tokens = chunk.usage.completion_tokens
+
                 # Some local backends (LM Studio + Qwen3, DeepSeek, etc.) stream
                 # the model's chain-of-thought in a non-standard `reasoning_content`
                 # field. Show it dimmed so the user can see the model is working.
@@ -156,6 +187,15 @@ class OpenAICompatProvider(BaseProvider):
         if reasoning_started:
             sys.stdout.write("\x1b[0m")  # always close the dim attribute
             reasoning_started = False
+
+        # Estimate tokens if API didn't provide usage info
+        if self.input_tokens == 0 and self.output_tokens == 0:
+            # Estimate input tokens from messages
+            messages_text = " ".join(str(m) for m in self.messages)
+            self.input_tokens = _estimate_tokens(messages_text)
+            # Estimate output tokens from generated text
+            self.output_tokens = _estimate_tokens(full_text)
+
         if full_text:
             sys.stdout.write("\n")
             sys.stdout.flush()

@@ -4,7 +4,7 @@ import click
 
 from .agent import AgentLoop
 from .discovery import discover
-from .providers import BaseProvider, OpenAICompatProvider
+from .providers import BaseProvider, OpenAICompatProvider, _TOKEN_BUDGET
 from .selector import open_model_selector
 from .ui import console, print_token_usage, print_welcome
 
@@ -62,7 +62,10 @@ def _auto_select(max_tokens: int | None, no_think: bool = False) -> BaseProvider
     help="Cap output tokens per response. If unset, the server decides (uses remaining context).",
 )
 @click.option(
-    "--local", "-l", default=None, metavar="URL",
+    "--local",
+    "-l",
+    default=None,
+    metavar="URL",
     help="Connect directly to an OpenAI-compat server (e.g. http://localhost:11434)",
 )
 @click.option("--yes", "-y", is_flag=True, help="Auto-approve all tool calls")
@@ -86,8 +89,13 @@ def main(
 
     if local:
         import httpx
+
         try:
-            r = httpx.get(f"{local}/v1/models", timeout=3, headers={"Authorization": "Bearer not-needed"})
+            r = httpx.get(
+                f"{local}/v1/models",
+                timeout=3,
+                headers={"Authorization": "Bearer not-needed"},
+            )
             models = [m["id"] for m in r.json().get("data", [])]
         except Exception:
             models = []
@@ -97,7 +105,9 @@ def main(
         provider = OpenAICompatProvider(
             model=models[0], base_url=local, max_tokens=max_tokens, no_think=no_think
         )
-        console.print(f"[dim]Model:[/dim] [green]●[/green] [cyan]{local} — {models[0]}[/cyan]")
+        console.print(
+            f"[dim]Model:[/dim] [green]●[/green] [cyan]{local} — {models[0]}[/cyan]"
+        )
     else:
         with console.status("[dim]Detecting local models…[/dim]", spinner="dots"):
             provider = _auto_select(max_tokens, no_think=no_think)
@@ -111,6 +121,7 @@ def main(
 
     if yes:
         from .tools import TOOL_MAP
+
         agent.permissions._always_allow.update(TOOL_MAP.keys())
 
     # One-shot mode — requires a model
@@ -120,7 +131,7 @@ def main(
             sys.exit(1)
         agent.run_turn(" ".join(prompt))
         console.print()
-        print_token_usage(provider.input_tokens, provider.output_tokens)
+        print_token_usage(provider.input_tokens, provider.output_tokens, _TOKEN_BUDGET)
         return
 
     print_welcome()
@@ -128,7 +139,9 @@ def main(
     while True:
         try:
             console.print()
-            user_input = console.input("[bold bright_blue]>[/bold bright_blue] ").strip()
+            user_input = console.input(
+                "[bold bright_blue]>[/bold bright_blue] "
+            ).strip()
         except (EOFError, KeyboardInterrupt):
             console.print()
             break
@@ -159,12 +172,18 @@ def main(
             elif cmd == "/think":
                 if not args or args[0].lower() not in ("on", "off"):
                     state = "off" if no_think else "on"
-                    console.print(f"[dim]Thinking is currently {state}. Use /think on|off.[/dim]")
+                    console.print(
+                        f"[dim]Thinking is currently {state}. Use /think on|off.[/dim]"
+                    )
                 else:
                     no_think = args[0].lower() == "off"
-                    if agent.provider and isinstance(agent.provider, OpenAICompatProvider):
+                    if agent.provider and isinstance(
+                        agent.provider, OpenAICompatProvider
+                    ):
                         agent.provider.no_think = no_think
-                    console.print(f"[dim]Thinking {'disabled' if no_think else 'enabled'}.[/dim]")
+                    console.print(
+                        f"[dim]Thinking {'disabled' if no_think else 'enabled'}.[/dim]"
+                    )
             elif cmd == "/clear":
                 if agent.provider:
                     agent.provider.messages.clear()
@@ -173,9 +192,14 @@ def main(
                 console.print("[dim]Conversation cleared.[/dim]")
             elif cmd == "/tokens":
                 p = agent.provider
-                print_token_usage(p.input_tokens if p else 0, p.output_tokens if p else 0)
+                print_token_usage(
+                    p.input_tokens if p else 0,
+                    p.output_tokens if p else 0,
+                    _TOKEN_BUDGET,
+                )
             elif cmd == "/ram":
                 from .sysinfo import memory_status_markup
+
                 console.print(memory_status_markup())
             elif cmd == "/compact":
                 if agent.provider:
@@ -183,6 +207,7 @@ def main(
                     console.print("[dim]Compacted.[/dim]")
             elif cmd == "/tools":
                 from .tools import ALL_TOOLS
+
                 rows = "\n".join(
                     f"  [cyan]{t.name:<16}[/cyan] {t.description[:60]}"
                     for t in ALL_TOOLS
@@ -194,7 +219,9 @@ def main(
                     agent.permissions._save()
                     console.print(f"[dim]Always allowing: {args[0]}[/dim]")
                 else:
-                    console.print(f"[dim]Always-allowed: {sorted(agent.permissions._always_allow)}[/dim]")
+                    console.print(
+                        f"[dim]Always-allowed: {sorted(agent.permissions._always_allow)}[/dim]"
+                    )
             else:
                 console.print(f"[dim]Unknown command: {cmd}. Type /help.[/dim]")
             continue
@@ -202,6 +229,8 @@ def main(
         if not agent.run_turn(user_input):
             break
 
-    p = agent.provider
-    print_token_usage(p.input_tokens if p else 0, p.output_tokens if p else 0)
+        p = agent.provider
+        if p:
+            print_token_usage(p.input_tokens, p.output_tokens, _TOKEN_BUDGET)
+
     console.print("[dim]Bye.[/dim]")
